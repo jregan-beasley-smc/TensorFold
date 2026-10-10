@@ -1,0 +1,42 @@
+PR635 review fixes: reproduction and bounded Spark validation
+
+Base: 5fa8ad0fd9c53131c599c39f8885117d5a582fda (ashhart/TensorFold PR635).
+Code fixes: 26c82f71d551c9c1ebdbd875018994e4b921aedc (the preceding two fix commits).
+The three changed runtime/test files are byte-identical to the sources qualified before these commits were created.
+This separate validation commit can be omitted when cherry-picking the fixes.
+
+Environment
+11 October 2026, NVIDIA DGX Spark / GB10, Linux aarch64, Ubuntu 24.04.5 LTS,
+kernel 7.0.0-1019-nvidia, NVIDIA driver 580.178.04, exact Zig 0.17.0.
+No checkpoint was loaded by the test; it checks shared CUDA infrastructure only.
+
+Results
+- CUDA host target on macOS: submitted 286/288 passed, fixed 298/300 passed; both have two Linux-only skips.
+- CUDA host target on Linux aarch64: submitted 293/293 passed, fixed 305/305 passed. These are test-cuda-host counts, not the full project test target.
+- Independent acceptance.zig: the same six tests fail on submitted code and pass on the fix on macOS. The fixed version also passes all six on Linux.
+- Tests cover post-capture agreement errors, host allocation failure, two host threads with blocking agreement and unilateral allocation failure or fingerprint change, and zero/small cache limits.
+- Actual CUDA: submitted code fails the VMM arena reuse assertion. A control changing only attribute 126 to 110 passes the identical harness. The combined fix passes plain allocation, graph checks and VMM reuse.
+- Graph checks exercise capture/replay, eviction, fingerprint invalidation, an injected capture-body failure and eager recovery. Two InjectedCaptureBodyFailure warnings are expected.
+- The combined device gate completed in 0.402 seconds with exit 0. This is a functional check duration, not a performance result.
+- Requested test payload was bounded at 16 MiB; driver/context/graph overhead is additional. Minimum sampled MemAvailable was 38.736 GiB. Existing services and their configuration were unchanged.
+- The qualified three-file code fix passed zig fmt. Lean checking reported 542 inherited problems on both submitted and fixed trees, with zero new findings.
+
+Reproduce from the repository root with Zig 0.17.0
+
+    zig build test-cuda-host -j2 --summary all
+    zig test -lc --dep graph_cache -Mroot=tools/zig/pr635_review/acceptance.zig -Mgraph_cache=zig/src/cuda/graph_cache.zig
+    zig build-exe -lc -O Debug --dep cuda -Mroot=tools/zig/pr635_review/cuda_gate.zig -Mcuda=zig/src/cuda/root.zig -femit-bin=/tmp/pr635-device-probe
+    /tmp/pr635-device-probe
+
+Run the device probe only on an available CUDA GPU, using the machine's normal lock and admission guard. The receipt's run used a 30-second process deadline and a 16 GiB MemAvailable floor. The standalone harness does not provide that external supervision or service-state auditing. It retains/releases its own process context and never resets the device.
+For the before control, use an isolated checkout at the base SHA and point -Mgraph_cache or -Mcuda there while keeping the same test sources.
+VMM can report unsupported or skipped_granularity on other devices; those outcomes do not qualify that path. It reported passed on this Spark.
+
+Source identity
+The device harness is the tested source with only zig fmt whitespace changes. results.json records the tested and publication hashes. The acceptance source has only single-line comment edits for the repository style. The original failure/control and combined-fix runs used the same unformatted device harness. The fixes themselves have no publication-time source changes.
+
+Scope and distributed cost
+When Agree is installed, a cache hit now takes three agreement callbacks instead of zero; a successful capture miss takes six instead of two. These keep rank decisions aligned, but their real collective and host-synchronisation cost is unmeasured. The underlying transport determines that cost. With Agree absent, the checks are local.
+The paired-thread tests prove the tested host-policy paths; actual two-GPU/NCCL capture, transport failures, model serving, end-to-end performance and model quality remain untested here. The exact failing VMM driver-call return code was not instrumented. This work does not establish a cause for unrelated CUDA719 reports.
+
+Jonathan Regan-Beasley, contributing in a private capacity. This does not represent the views or positions of any organisation.

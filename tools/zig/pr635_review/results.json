@@ -1,0 +1,62 @@
+{
+  "base_commit": "5fa8ad0fd9c53131c599c39f8885117d5a582fda",
+  "fix_commit": "26c82f71d551c9c1ebdbd875018994e4b921aedc",
+  "zig_version": "0.17.0",
+  "environment": {
+    "recorded_utc": "2026-10-10T23:13:18.635613+00:00",
+    "os": {
+      "PRETTY_NAME": "Ubuntu 24.04.5 LTS",
+      "NAME": "Ubuntu",
+      "VERSION_ID": "24.04"
+    },
+    "kernel": "7.0.0-1019-nvidia",
+    "architecture": "aarch64",
+    "gpu_driver": "NVIDIA GB10, 580.178.04",
+    "zig": "0.17.0",
+    "model_loaded_by_test": false
+  },
+  "fixed_source_sha256": {
+    "zig/src/cuda/root.zig": "6e88d07fd22474ee0a2dc191ee86191425cffc0ed29a6ba1df64a34e636379e6",
+    "zig/src/cuda/abi.zig": "de1dc83802e2d2853fa04bab6cc3178e00f632610660b2f45728bee37d91bc03",
+    "zig/src/cuda/arena.zig": "6f7ab1dde35344460d681ed674f75cc412686e079f550eaff17348cf12289e42",
+    "zig/src/cuda/memory.zig": "712e4b9fc6c21e5ffd2fd1b7e8f58b236c4048508a268ab54a9e27973db8643f",
+    "zig/src/cuda/graph_cache.zig": "4d250426b3c8ec2d585a401eb56c3fff90923be5b6c200f5d9109d5b66d8a10d",
+    "zig/src/cuda/graph.zig": "d853fe7f4ce9d9570add7bda28bde5794a27125819c5b4fa5cfef44c0de1be84",
+    "zig/src/cuda/module.zig": "f69372707682089d7a236ded0a22f15b3ee15aa79b17cfadd488ccc85dad2585",
+    "zig/src/cuda/launch.zig": "041418052fd662a1161f25ff652da7748e96a243a489f9b12b0c13ad8f175cd9",
+    "zig/src/cuda/driver.zig": "fb7fcc6dcb08fc1bfe21d14129ddb31ccf0d2e18234c886d4762d5a00b1c6986",
+    "zig/src/cuda/context.zig": "f2d3538a8ace8321887dc38f82be81ed2b7ff99125e2be7dc59d37596f8a0326",
+    "zig/src/cuda/stream.zig": "05a506fea89e792001737816ec0ef2def7a7a0672eba978fbe2c95f825272b4b",
+    ".zig-version": "02d38e98e88f4a8dc2ea40dbb769338601066fc94920b52882a14f21ad97f7ee",
+    "zig/src/cuda/graph_cache_regression_test.zig": "2a46449aa3cb353ea50a6ba0d652ecd938668868d47d9975e64f2c6cc9eb00f7"
+  },
+  "tested_device_harness_sha256": "f378dad0a1855a2b9cf4665b201f486adafb6a411cf59a01e896d8085deab918",
+  "published_device_harness_sha256": "76aead38acdfb4a3f45a153a645c59a6e82f46a75379f779706f935ec9929ff6",
+  "harness_publication_change": "zig fmt whitespace only",
+  "tested_binary_sha256": "872f3fd98db0c471745f5826f62e1771917982e0a821c17b310534739c40a965",
+  "linux_cuda_host": {
+    "passed": 305,
+    "skipped": 0
+  },
+  "linux_fixed_acceptance": {
+    "passed": 6,
+    "skipped": 0
+  },
+  "macos_acceptance": {
+    "submitted_passed": 0,
+    "submitted_failed": 6,
+    "fixed_passed": 6
+  },
+  "device": {
+    "plain": "passed",
+    "graphs": "passed",
+    "vmm": "passed",
+    "returncode": 0,
+    "requested_payload_bound_bytes": 16777216,
+    "context_reset": false
+  },
+  "scope": "model-free single-device; rank agreement exercised in paired host simulation",
+  "tested_acceptance_sha256": "7486048e37e9b2aa3f9056aa85dba0602a0d47fffac31d82ebd32ea71feb7fec",
+  "published_acceptance_sha256": "c02554e175b39a831094fd3710a56525282771098c5b245ae30a279fa1b96549",
+  "acceptance_publication_change": "four comment blocks condensed; executable statements unchanged"
+}
