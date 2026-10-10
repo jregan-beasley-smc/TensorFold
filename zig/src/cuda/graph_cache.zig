@@ -12,7 +12,7 @@ pub const Body = struct {
     run: *const fn (ctx: *anyopaque, stream: Stream) anyerror!void,
 };
 
-/// Every rank's verdict AND-ed, so ranks capture, evict and fall back at the same steps; never called in a capture.
+/// AND across ranks in identical logical key/Settings call order; fingerprints are rank-local; no capture calls.
 pub const Agree = struct {
     ctx: *anyopaque,
     all: *const fn (ctx: *anyopaque, ok: bool) anyerror!bool,
@@ -53,7 +53,9 @@ pub fn Cache(comptime Key: type) type {
         stats: struct { replayed: u64 = 0, captured: u64 = 0, eager: u64 = 0, evicted: u64 = 0, dropped: u64 = 0, floor_hits: u64 = 0 } = .{},
 
         pub fn init(gpa: std.mem.Allocator, engine: Engine, settings: Settings) Self {
-            return .{ .gpa = gpa, .engine = engine, .settings = settings, .cap = settings.max };
+            var bounded = settings;
+            bounded.min_keep = @min(settings.min_keep, settings.max);
+            return .{ .gpa = gpa, .engine = engine, .settings = bounded, .cap = settings.max };
         }
 
         pub fn deinit(c: *Self) void {
@@ -100,19 +102,23 @@ pub fn Cache(comptime Key: type) type {
 
         /// One step: the key's graph launched, captured first on a miss; a new `fingerprint` drops every graph first.
         pub fn run(c: *Self, key: Key, stream: Stream, fingerprint: u64, body: Body) !Outcome {
-            if (!c.settings.on or c.failed) return c.eager(stream, body);
-            if (c.fingerprint != null and c.fingerprint.? != fingerprint) c.dropAll();
+            if (!try c.agreed(c.settings.on and !c.failed and c.settings.max > 0)) return c.eager(stream, body);
+            const unchanged = c.fingerprint == null or c.fingerprint.? == fingerprint;
+            if (!try c.agreed(unchanged)) c.dropAll();
             c.fingerprint = fingerprint;
             c.tick += 1;
-            if (c.entries.getPtr(key)) |e| {
+            if (try c.agreed(c.entries.contains(key))) {
+                const e = c.entries.getPtr(key).?;
                 e.used = c.tick;
                 try c.engine.launch(c.engine.ctx, e.exec, stream);
                 c.stats.replayed += 1;
                 return .replayed;
             }
+            // A peer missed: remove our copy too, so recapture never replaces an owned executable.
+            if (c.entries.fetchSwapRemove(key)) |e| c.engine.free(c.engine.ctx, e.value.exec);
             // a miss: room on every rank, else shed the least recent quarter and lower the cap (once below it, eager)
             const room_here = if (c.room) |f| f() else true;
-            if (!try c.agreed(room_here and c.cap > 0)) {
+            if (!try c.agreed(room_here)) {
                 if (c.settings.hold) {
                     if (!quiet and c.stats.floor_hits == 0) std.log.warn("graph cache: under the memory floor on {s} rank: this key eager, {d} graphs held (hold)", .{ if (room_here) "another" else "this", c.entries.count() });
                     c.stats.floor_hits += 1;
@@ -123,7 +129,7 @@ pub fn Cache(comptime Key: type) type {
                     for (0..drop) |_| if (c.entries.count() > c.settings.min_keep) c.evictOldest();
                 }
                 const was = c.cap;
-                c.cap = @intCast(@max(c.entries.count(), c.settings.min_keep));
+                c.cap = @intCast(@min(c.settings.max, @max(c.entries.count(), c.settings.min_keep)));
                 c.stats.floor_hits += 1;
                 if (!quiet and c.cap != was) std.log.warn("graph cache: under the memory floor on {s} rank: cap {d} -> {d} ({d} held, {d} evicted, {d} eager so far)", .{ if (room_here) "another" else "this", was, c.cap, c.entries.count(), c.stats.evicted, c.stats.eager + 1 });
                 return c.eager(stream, body);
@@ -133,18 +139,22 @@ pub fn Cache(comptime Key: type) type {
                 c.cap = c.settings.max;
             }
             while (c.entries.count() >= c.cap) c.evictOldest();
+            const reserved = if (c.entries.ensureUnusedCapacity(c.gpa, 1)) |_| true else |_| false;
+            if (!try c.agreed(reserved)) return c.eager(stream, body);
             const exec = c.engine.capture(c.engine.ctx, stream, body) catch |err| blk: {
                 // the only trace of why graphs went off (the step then runs eagerly, which may fail the same way)
                 if (!quiet) std.log.warn("graph capture failed: {s} (key {any}, {d} graphs held)", .{ @errorName(err), key, c.entries.count() });
                 break :blk null;
             };
+            var owned = exec;
+            defer if (owned) |x| c.engine.free(c.engine.ctx, x);
             if (!try c.agreed(exec != null)) {
-                if (exec) |x| c.engine.free(c.engine.ctx, x);
                 c.failed = true;
                 c.dropAll();
                 return c.eager(stream, body);
             }
-            try c.entries.put(c.gpa, key, .{ .exec = exec.?, .used = c.tick });
+            c.entries.putAssumeCapacityNoClobber(key, .{ .exec = exec.?, .used = c.tick });
+            owned = null;
             try c.engine.launch(c.engine.ctx, exec.?, stream);
             c.stats.captured += 1;
             return .captured;
@@ -298,8 +308,8 @@ const Peer = struct {
 test "graph cache: a capture failing on another rank turns graphs off here too" {
     var f: Fake = .{};
     var r: Ran = .{};
-    // per miss: room, then the capture's verdict; the peer's capture fails on the second key
-    var peer: Peer = .{ .theirs = &.{ true, true, true, false } };
+    // Per miss: active, unchanged fingerprint, hit, room, reserve, capture; then failed-state active vote.
+    var peer: Peer = .{ .theirs = &.{ true, true, false, true, true, true, true, true, false, true, true, false, false } };
     var c = Cache(u32).init(std.testing.allocator, f.engine(), .{});
     c.agree = peer.agree();
     defer c.deinit();
@@ -389,4 +399,8 @@ test "graph cache: off runs every step eagerly" {
 
 test "graph cache: fingerprint" {
     try std.testing.expect(fingerprintOf(&.{ 1, 2 }) != fingerprintOf(&.{ 2, 1 }));
+}
+
+test {
+    _ = @import("graph_cache_regression_test.zig");
 }
