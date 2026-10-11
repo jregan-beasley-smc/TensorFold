@@ -130,7 +130,7 @@ pub const Cuda = struct {
     }
 
     pub fn backend(x: *Cuda) be.Backend {
-        return .{ .ptr = x, .vtable = &.{ .prefill = prefill, .first = first, .queue = queue, .read = read, .verify = verify, .keep = keep, .draft = draft, .probabilities = probabilities, .tree = tree, .release = release, .prefill_many = prefillMany } };
+        return .{ .ptr = x, .first_before_draft = true, .vtable = &.{ .prefill = prefill, .first = first, .queue = queue, .read = read, .verify = verify, .keep = keep, .draft = draft, .probabilities = probabilities, .tree = tree, .release = release, .prefill_many = prefillMany } };
     }
 
     /// The stream's drafting (its DFlash2 context and copy index), made on first use.
@@ -463,7 +463,7 @@ pub const Cuda = struct {
                     .value => |v| v,
                     .handle => |h| try read(p, h),
                 };
-                try firsts[na].appendSlice(x.gpa, context);
+                try firsts[na].appendSlice(x.gpa, r.stream.prompt());
                 try firsts[na].append(x.gpa, token);
                 context = firsts[na].items;
             }
