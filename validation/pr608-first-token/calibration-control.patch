@@ -1,0 +1,43 @@
+--- a/zig/src/families/qwen27/cuda/lanes.zig
++++ b/zig/src/families/qwen27/cuda/lanes.zig
+@@ -127,6 +127,40 @@
+             cost.* = .{ .width = @intCast(r), .ms = times[1] };
+         }
+         x.cost_count = n;
++        // Diagnostic only: retain normal calibration, then hold its host costs fixed across binaries.
++        if (std.c.getenv("TF_PR608_FIXED_COSTS")) |fixed_costs_env| {
++            var fixed: [calibration.len + 1]f64 = undefined;
++            var fields = std.mem.splitScalar(u8, std.mem.span(fixed_costs_env), ',');
++            var count: usize = 0;
++            while (fields.next()) |field| {
++                if (count == n) return error.InvalidFixedCalibrationCosts;
++                const ms = std.fmt.parseFloat(f64, std.mem.trim(u8, field, " \t\r\n")) catch
++                    return error.InvalidFixedCalibrationCosts;
++                if (!std.math.isFinite(ms) or ms <= 0) return error.InvalidFixedCalibrationCosts;
++                fixed[count] = ms;
++                count += 1;
++            }
++            if (count != n) return error.InvalidFixedCalibrationCosts;
++            for (x.costs[0..n], fixed[0..n]) |*cost, ms| cost.ms = ms;
++        }
++        if (std.c.getenv("TF_PR608_CALIBRATION_LOG")) |log_costs_env| {
++            if (std.mem.eql(u8, std.mem.span(log_costs_env), "1")) {
++                var buf: [2048]u8 = undefined;
++                var out: std.Io.Writer = .fixed(&buf);
++                try out.writeAll("PR608_CALIBRATION {\"widths\":[");
++                for (x.costs[0..n], 0..) |cost, i| {
++                    if (i > 0) try out.writeByte(',');
++                    try out.print("{d}", .{cost.width});
++                }
++                try out.writeAll("],\"ms\":[");
++                for (x.costs[0..n], 0..) |cost, i| {
++                    if (i > 0) try out.writeByte(',');
++                    try out.print("{e:.17}", .{cost.ms});
++                }
++                try out.writeAll("]}");
++                std.debug.print("{s}\n", .{out.buffered()});
++            }
++        }
+     }
+ 
+     pub fn backend(x: *Cuda) be.Backend {
